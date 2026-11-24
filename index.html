@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>FindIt – Find What’s Lost. Reward What’s Good.</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/htm@3.1.1/dist/htm.umd.js"></script>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{background:#f4f6ff;color:#1e1b4b;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0}
+.card{background:#fff;border-radius:1.25rem;box-shadow:0 2px 14px rgba(79,70,229,.08);transition:transform .2s,box-shadow .2s;animation:in .35s ease both}
+.card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(79,70,229,.14)}
+@keyframes in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.btn{background:#4f46e5;color:#fff;border-radius:.9rem;padding:.55rem 1rem;font-weight:600;transition:.2s}.btn:hover{background:#4338ca}
+.btn2{background:#eef2ff;color:#4338ca;border-radius:.9rem;padding:.55rem 1rem;font-weight:600}
+.inp{width:100%;border:1px solid #c7d2fe;border-radius:.8rem;padding:.55rem .8rem;background:#fff;color:#1e1b4b}
+.pill{border-radius:99px;padding:.15rem .6rem;font-size:.75rem;font-weight:600}
+</style></head>
+<body><div id="root"></div>
+<script>
+const {useState}=React,h=htm.bind(React.createElement);
+const CATS={Electronics:'🎧',Books:'📚','ID / Cards':'🪪',Bags:'🎒',Keys:'🔑',Clothing:'🧥',Other:'📦'};
+const LOCS=['Library','Canteen','Main Block','Sports Complex','Hostel','Auditorium'];
+const DOMAIN='@jecrcu.edu.in',PTS=100;
+const dt=n=>new Date(Date.now()-n*864e5).toISOString().slice(0,10);
+const SEED={me:null,
+users:[{id:'u0',name:'Admin Office',email:'admin'+DOMAIN,points:0,returns:0,role:'admin'},
+{id:'u1',name:'Aarav Sharma',email:'aarav'+DOMAIN,points:1200,returns:12},
+{id:'u2',name:'Meera Iyer',email:'meera'+DOMAIN,points:800,returns:8},
+{id:'u3',name:'Rohan Das',email:'rohan'+DOMAIN,points:300,returns:3},
+{id:'u4',name:'Ananya Roy',email:'ananya'+DOMAIN,points:100,returns:1}],
+items:[
+{id:'i1',type:'lost',title:'Black wireless earbuds case',desc:'Black earbuds charging case with a small scratch, left near study tables',category:'Electronics',location:'Library',date:dt(2),owner:'u4',status:'open'},
+{id:'i2',type:'found',title:'Earbuds charging case',desc:'Found a black wireless earbuds case on a study table',category:'Electronics',location:'Library',date:dt(1),owner:'u2',status:'open'},
+{id:'i3',type:'found',title:'Blue water bottle',desc:'Steel blue bottle with stickers',category:'Other',location:'Sports Complex',date:dt(3),owner:'u1',status:'open'},
+{id:'i4',type:'lost',title:'Data Structures textbook',desc:'Thick DSA book with name written on the first page',category:'Books',location:'Main Block',date:dt(4),owner:'u3',status:'open'},
+{id:'i5',type:'found',title:'Student ID card',desc:'ID card found near the canteen counter',category:'ID / Cards',location:'Canteen',date:dt(1),owner:'u3',status:'open'},
+{id:'i6',type:'lost',title:'Hostel room keys with red keychain',desc:'Three keys on a red keychain',category:'Keys',location:'Hostel',date:dt(5),owner:'u2',status:'open'}],
+txs:[{id:'t1',uid:'u4',amt:100,why:'Returned a calculator to its owner',t:Date.now()-6e8}],
+notes:[],reds:[],
+rewards:[{id:'r1',name:'Canteen 10% discount',cost:200,icon:'🍽️',stock:50},{id:'r2',name:'Free stationery kit',cost:300,icon:'✏️',stock:20},{id:'r3',name:'Printing credits (50 pages)',cost:250,icon:'🖨️',stock:40},{id:'r4',name:'College merchandise tee',cost:800,icon:'👕',stock:10},{id:'r5',name:'Event entry pass',cost:500,icon:'🎟️',stock:15},{id:'r6',name:'Sports facility hour',cost:350,icon:'🏸',stock:25}]};
+const load=()=>{try{return JSON.parse(localStorage.getItem('findit')||'null')||SEED}catch(e){return SEED}};
+const tok=s=>new Set(s.toLowerCase().replace(/[^a-z0-9 ]/g,' ').split(' ').filter(w=>w.length>2&&!['the','and','with','near','found','lost'].includes(w)));
+// DEMO matcher (client-side heuristic). Production: Supabase Edge Function + embeddings (see Backend tab).
+function score(a,b){const x=tok(a.title+' '+a.desc),y=tok(b.title+' '+b.desc);let i=0;x.forEach(w=>y.has(w)&&i++);
+const j=i/(x.size+y.size-i||1);const days=Math.abs(new Date(a.date)-new Date(b.date))/864e5;
+return Math.min(100,Math.round(j*60+(a.category===b.category?20:0)+(a.location===b.location?12:0)+(days<=3?8:0)))}
+const badges=u=>[[1,'🌱 First Return'],[5,'🤝 Good Samaritan'],[10,'🏆 Campus Hero']].filter(b=>u.returns>=b[0]).map(b=>b[1]);
+
+function App(){
+const [S,setS]=useState(load),[tab,setTab]=useState('home'),[q,setQ]=useState(''),[ft,setFt]=useState(''),[fc,setFc]=useState(''),[fl,setFl]=useState(''),[err,setErr]=useState(''),[mode,setMode]=useState('in'),[toast,setToast]=useState('');
+const up=fn=>setS(p=>{const n=structuredClone(p);fn(n);try{localStorage.setItem('findit',JSON.stringify(n))}catch(e){}return n});
+const say=m=>{setToast(m);setTimeout(()=>setToast(''),2600)};
+const note=(n,uid,text)=>n.notes.unshift({id:Math.random(),uid,text,t:Date.now()});
+const U=id=>S.users.find(u=>u.id===id)||{name:'?'};
+const me=S.users.find(u=>u.id===S.me);
+const field='block text-sm font-semibold mb-1 mt-3';
+
+if(!me){
+ const login=e=>{e.preventDefault();const f=new FormData(e.target),em=f.get('em').trim().toLowerCase(),nm=(f.get('nm')||'').trim();
+  if(!(em.endsWith(DOMAIN)||/^[a-z0-9]{6,12}$/.test(em)))return setErr('Use your official college email ('+DOMAIN+') or student ID.');
+  let u=S.users.find(x=>x.email===em||x.email===em+DOMAIN);
+  if(mode==='up'){if(u)return setErr('Account already exists. Please sign in.');if(!nm)return setErr('Please enter your name.');
+   u={id:'u'+Date.now(),name:nm,email:em,points:0,returns:0};up(n=>{n.users.push(u);n.me=u.id})}
+  else{if(!u)return setErr('No account found. Register first.');if(u.banned)return setErr('This account is suspended.');up(n=>{n.me=u.id})}setErr('')};
+ return h`<div class="min-h-screen flex items-center justify-center p-4"><div class="card p-6 w-full max-w-md">
+  <div class="text-3xl font-extrabold text-indigo-600">🧭 FindIt</div>
+  <p class="text-sm text-indigo-900/70 mt-1">Find What’s Lost. Reward What’s Good.</p>
+  <p class="mt-4 font-semibold">Someone’s lost something. Your kindness can bring it back.</p>
+  <form onSubmit=${login} class="mt-3">
+   ${mode==='up'&&h`<label class=${field}>Full name</label><input name="nm" class="inp"/>`}
+   <label class=${field}>College email or student ID</label><input name="em" class="inp" placeholder=${'you'+DOMAIN}/>
+   ${err&&h`<p class="text-red-600 text-sm mt-2">${err}</p>`}
+   <button class="btn w-full mt-4">${mode==='up'?'Create account':'Sign in'}</button></form>
+  <button class="text-sm text-indigo-600 mt-3" onClick=${()=>{setMode(mode==='up'?'in':'up');setErr('')}}>${mode==='up'?'Have an account? Sign in':'New here? Register'}</button>
+  <div class="mt-4 pt-4 border-t border-indigo-100 text-xs text-indigo-900/70">Demo accounts (one tap):
+   <div class="flex flex-wrap gap-2 mt-2">${S.users.map(u=>h`<button key=${u.id} class="btn2 text-xs" onClick=${()=>up(n=>{n.me=u.id})}>${u.role==='admin'?'Admin':u.name.split(' ')[0]}</button>`)}</div>
+   <p class="mt-2">Demo mode: sign-in is simulated. Real email verification needs Supabase Auth (see Backend tab).</p></div></div></div>`}
+
+const mine=S.notes.filter(n=>n.uid===me.id);
+const tabs=[['home','Home'],['browse','Browse'],['report','Report'],['rewards','Rewards'],['board','Leaderboard'],['me','Dashboard'],['alerts','🔔 '+mine.length]].concat(me.role==='admin'?[['admin','Admin']]:[]).concat([['setup','Backend']]);
+const matchesFor=u=>S.items.filter(i=>i.owner===u&&i.type==='lost'&&i.status==='open').flatMap(l=>S.items.filter(f=>f.type==='found'&&f.status==='open'&&f.owner!==u).map(f=>({l,f,s:score(l,f)})).filter(m=>m.s>=45));
+const submit=e=>{e.preventDefault();const f=new FormData(e.target),file=f.get('img'),go=img=>{
+  const it={id:'i'+Date.now(),type:f.get('type'),title:f.get('title'),desc:f.get('desc'),category:f.get('category'),location:f.get('location'),date:f.get('date'),owner:me.id,status:'open',img};
+  up(n=>{n.items.unshift(it);n.items.filter(o=>o.type!==it.type&&o.status==='open'&&o.owner!==me.id).forEach(o=>{const s=score(it,o);if(s>=50){note(n,o.owner,'🔍 Possible match ('+s+'%): "'+it.title+'" may be your "'+o.title+'".');note(n,me.id,'🔍 Possible match ('+s+'%) with "'+o.title+'" reported by '+U(o.owner).name+'.')}})});
+  say('Report posted. Thank you for helping!');setTab('browse');e.target.reset()};
+  if(file&&file.size){const r=new FileReader();r.onload=()=>go(r.result);r.readAsDataURL(file)}else go(null)};
+const claim=it=>up(n=>{const x=n.items.find(i=>i.id===it.id);x.status='pending';x.claimBy=me.id;note(n,it.owner,'🙌 '+me.name+' says "'+it.title+'" is theirs. Hand it over, then they will confirm.')});
+const confirm=it=>up(n=>{const x=n.items.find(i=>i.id===it.id),f=n.users.find(u=>u.id===x.owner);x.status='returned';f.points+=PTS;f.returns++;
+  n.txs.unshift({id:'t'+Date.now(),uid:f.id,amt:PTS,why:'Verified return: '+x.title,t:Date.now()});
+  note(n,f.id,'🎉 '+me.name+' confirmed receiving "'+x.title+'". You earned '+PTS+' Kindness Points!');note(n,me.id,'✅ Recovery confirmed for "'+x.title+'".')});
+const redeem=r=>{if(me.points<r.cost)return say('Not enough points yet.');if(r.stock<1)return say('Out of stock.');
+  up(n=>{const u=n.users.find(x=>x.id===me.id),rw=n.rewards.find(x=>x.id===r.id);u.points-=r.cost;rw.stock--;n.txs.unshift({id:'t'+Date.now(),uid:u.id,amt:-r.cost,why:'Redeemed: '+r.name,t:Date.now()});n.reds.unshift({id:'d'+Date.now(),uid:u.id,name:r.name,t:Date.now()});note(n,u.id,'🎁 Redeemed '+r.name+'. Show this in-app at the counter.')});say('Redeemed!')};
+
+const Card=it=>h`<div key=${it.id} class="card overflow-hidden ${it.flagged?'ring-2 ring-red-300':''}">
+ ${it.img?h`<img src=${it.img} class="w-full h-36 object-cover"/>`:h`<div class="h-24 bg-indigo-50 flex items-center justify-center text-4xl">${CATS[it.category]}</div>`}
+ <div class="p-4"><div class="flex gap-2 items-center"><span class="pill ${it.type==='lost'?'bg-rose-100 text-rose-700':'bg-emerald-100 text-emerald-700'}">${it.type==='lost'?'Lost':'Found'}</span>${it.status!=='open'&&h`<span class="pill bg-amber-100 text-amber-800">${it.status}</span>`}</div>
+ <h3 class="font-bold mt-2">${it.title}</h3><p class="text-sm text-indigo-900/70">${it.desc}</p>
+ <p class="text-xs mt-2 text-indigo-900/60">📍 ${it.location} · 📅 ${it.date} · ${U(it.owner).name}</p>
+ ${it.status==='open'&&it.owner!==me.id&&(it.type==='found'?h`<button class="btn mt-3 text-sm" onClick=${()=>claim(it)}>This is mine</button>`:h`<button class="btn2 mt-3 text-sm" onClick=${()=>setTab('report')}>I found this one</button>`)}</div></div>`;
+const shown=S.items.filter(i=>!i.removed&&(!ft||i.type===ft)&&(!fc||i.category===fc)&&(!fl||i.location===fl)&&(i.title+i.desc).toLowerCase().includes(q.toLowerCase()));
+const board=[...S.users].filter(u=>u.role!=='admin').sort((a,b)=>b.returns-a.returns);
+const pend=S.items.filter(i=>i.status==='pending'&&i.claimBy===me.id);
+const ms=matchesFor(me.id);
+
+return h`<div class="max-w-5xl mx-auto p-4 pb-16">
+ <header class="flex flex-wrap items-center gap-3 justify-between">
+  <div class="text-2xl font-extrabold text-indigo-600">🧭 FindIt</div>
+  <div class="text-sm flex items-center gap-3"><span class="pill bg-indigo-100 text-indigo-700">⭐ ${me.points} pts</span>${me.name}<button class="btn2 text-xs" onClick=${()=>up(n=>{n.me=null})}>Sign out</button></div></header>
+ <nav class="flex gap-2 overflow-x-auto py-3">${tabs.map(t=>h`<button key=${t[0]} onClick=${()=>setTab(t[0])} class=${'whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-semibold transition '+(tab===t[0]?'bg-indigo-600 text-white':'bg-white text-indigo-700')}>${t[1]}</button>`)}</nav>
+
+ ${tab==='home'&&h`<div class="space-y-4">
+  <div class="card p-6 bg-gradient-to-br from-indigo-600 to-violet-500 !text-white" style=${{background:'linear-gradient(135deg,#4f46e5,#8b5cf6)',color:'#fff'}}>
+   <h1 class="text-2xl md:text-3xl font-extrabold">Someone’s lost something. Your kindness can bring it back.</h1>
+   <p class="mt-2 opacity-90">Do good. Help someone. Earn recognition.</p>
+   <div class="flex gap-2 mt-4"><button class="rounded-xl bg-white text-indigo-700 font-bold px-4 py-2" onClick=${()=>setTab('report')}>Report an item</button><button class="rounded-xl border border-white/60 px-4 py-2 font-semibold" onClick=${()=>setTab('browse')}>Browse listings</button></div></div>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${[['Open items',S.items.filter(i=>i.status==='open').length],['Returned',S.items.filter(i=>i.status==='returned').length],['Your points',me.points],['Your returns',me.returns]].map(s=>h`<div class="card p-4 text-center"><div class="text-2xl font-extrabold text-indigo-600">${s[1]}</div><div class="text-xs">${s[0]}</div></div>`)}</div>
+  <h2 class="font-bold text-lg">✨ AI matches for you</h2>
+  ${ms.length?ms.map(m=>h`<div class="card p-4 flex flex-wrap justify-between items-center gap-2"><div><b>${m.l.title}</b> ↔ <b>${m.f.title}</b><div class="text-xs">Found at ${m.f.location} by ${U(m.f.owner).name}</div></div><span class="pill bg-emerald-100 text-emerald-700">${m.s}% match</span><button class="btn text-sm" onClick=${()=>claim(m.f)}>This is mine</button></div>`):h`<p class="text-sm">No matches yet. Sign in as Ananya to see one in the demo.</p>`}</div>`}
+
+ ${tab==='browse'&&h`<div><div class="card p-3 grid md:grid-cols-4 gap-2"><input class="inp" placeholder="Search items…" value=${q} onInput=${e=>setQ(e.target.value)}/>
+  <select class="inp" value=${ft} onChange=${e=>setFt(e.target.value)}><option value="">Lost & found</option><option value="lost">Lost</option><option value="found">Found</option></select>
+  <select class="inp" value=${fc} onChange=${e=>setFc(e.target.value)}><option value="">All categories</option>${Object.keys(CATS).map(c=>h`<option>${c}</option>`)}</select>
+  <select class="inp" value=${fl} onChange=${e=>setFl(e.target.value)}><option value="">All locations</option>${LOCS.map(c=>h`<option>${c}</option>`)}</select></div>
+  <div class="grid sm:grid-cols-2 md:grid-cols-3 gap-4 mt-4">${shown.map(Card)}</div>${!shown.length&&h`<p class="text-center mt-8">Nothing here yet.</p>`}</div>`}
+
+ ${tab==='report'&&h`<form onSubmit=${submit} class="card p-5 max-w-xl"><h2 class="text-xl font-bold">Report an item</h2>
+  <label class=${field}>Type</label><select name="type" class="inp"><option value="lost">I lost something</option><option value="found">I found something</option></select>
+  <label class=${field}>Item name</label><input name="title" required class="inp"/>
+  <label class=${field}>Description</label><textarea name="desc" required class="inp" rows="3"></textarea>
+  <div class="grid grid-cols-2 gap-2"><div><label class=${field}>Category</label><select name="category" class="inp">${Object.keys(CATS).map(c=>h`<option>${c}</option>`)}</select></div>
+  <div><label class=${field}>Location</label><select name="location" class="inp">${LOCS.map(c=>h`<option>${c}</option>`)}</select></div></div>
+  <label class=${field}>Date</label><input type="date" name="date" required class="inp" defaultValue=${dt(0)}/>
+  <label class=${field}>Photo (optional)</label><input type="file" name="img" accept="image/*" class="inp"/>
+  <button class="btn mt-4">Post report</button></form>`}
+
+ ${tab==='rewards'&&h`<div><p class="mb-3">You have <b>${me.points}</b> Kindness Points. Thank you for being good to others.</p>
+  <div class="grid sm:grid-cols-2 md:grid-cols-3 gap-4">${S.rewards.map(r=>h`<div key=${r.id} class="card p-4"><div class="text-4xl">${r.icon}</div><h3 class="font-bold mt-2">${r.name}</h3><p class="text-sm">${r.cost} pts · ${r.stock} left</p><button class="btn mt-3 text-sm" disabled=${me.points<r.cost||r.stock<1} style=${{opacity:me.points<r.cost||r.stock<1?.5:1}} onClick=${()=>redeem(r)}>Redeem</button></div>`)}</div></div>`}
+
+ ${tab==='board'&&h`<div class="card p-4 max-w-xl"><h2 class="font-bold text-lg mb-2">🏅 Community Leaderboard</h2>${board.map((u,i)=>h`<div key=${u.id} class="flex justify-between items-center py-2 border-b border-indigo-50"><span>${['🥇','🥈','🥉'][i]||i+1+'.'} ${u.name}</span><span class="text-sm">${u.returns} returns · ${u.points} pts</span></div>`)}</div>`}
+
+ ${tab==='me'&&h`<div class="space-y-4"><div class="grid grid-cols-3 gap-3">${[['Points',me.points],['Returns',me.returns],['Reports',S.items.filter(i=>i.owner===me.id).length]].map(s=>h`<div class="card p-4 text-center"><div class="text-2xl font-extrabold text-indigo-600">${s[1]}</div>${s[0]}</div>`)}</div>
+  <div class="card p-4"><b>Badges:</b> ${badges(me).join('  ')||'Return your first item to earn one 🌱'}</div>
+  ${pend.length>0&&h`<div class="card p-4"><b>Confirm you received your item</b>${pend.map(i=>h`<div key=${i.id} class="flex justify-between items-center mt-2"><span>${i.title} (found by ${U(i.owner).name})</span><button class="btn text-sm" onClick=${()=>confirm(i)}>I got it back</button></div>`)}<p class="text-xs mt-2">Points are awarded to the finder only after you confirm.</p></div>`}
+  <div class="card p-4"><b>Points history</b>${S.txs.filter(t=>t.uid===me.id).map(t=>h`<div key=${t.id} class="flex justify-between text-sm mt-1"><span>${t.why}</span><b class=${t.amt>0?'text-emerald-600':'text-rose-600'}>${t.amt>0?'+':''}${t.amt}</b></div>`)}</div>
+  <div class="card p-4"><b>Reward history</b>${S.reds.filter(r=>r.uid===me.id).map(r=>h`<div key=${r.id} class="text-sm mt-1">${r.name}</div>`)}</div>
+  <div class="grid sm:grid-cols-2 md:grid-cols-3 gap-4">${S.items.filter(i=>i.owner===me.id).map(Card)}</div></div>`}
+
+ ${tab==='alerts'&&h`<div class="space-y-2 max-w-xl">${mine.length?mine.map(n=>h`<div key=${n.id} class="card p-3 text-sm">${n.text}</div>`):h`<p>No notifications yet.</p>`}</div>`}
+
+ ${tab==='admin'&&h`<div class="space-y-4"><div class="card p-4"><b>Students</b>${S.users.filter(u=>u.role!=='admin').map(u=>h`<div key=${u.id} class="flex flex-wrap justify-between items-center gap-2 py-2 text-sm border-b border-indigo-50"><span>${u.name} · ${u.points} pts ${u.banned?'(suspended)':''}</span><span class="flex gap-1"><button class="btn2 text-xs" onClick=${()=>up(n=>{n.users.find(x=>x.id===u.id).points+=50;n.txs.unshift({id:'t'+Date.now(),uid:u.id,amt:50,why:'Admin adjustment',t:Date.now()})})}>+50</button><button class="btn2 text-xs" onClick=${()=>up(n=>{const x=n.users.find(x=>x.id===u.id);x.points=Math.max(0,x.points-50);n.txs.unshift({id:'t'+Date.now(),uid:u.id,amt:-50,why:'Admin adjustment',t:Date.now()})})}>−50</button><button class="btn2 text-xs" onClick=${()=>up(n=>{const x=n.users.find(x=>x.id===u.id);x.banned=!x.banned})}>${u.banned?'Restore':'Suspend'}</button></span></div>`)}</div>
+  <div class="card p-4"><b>Listings</b>${S.items.filter(i=>!i.removed).map(i=>h`<div key=${i.id} class="flex flex-wrap justify-between items-center gap-2 py-2 text-sm border-b border-indigo-50"><span>${i.flagged?'🚩 ':''}${i.title} · ${i.status}</span><span class="flex gap-1"><button class="btn2 text-xs" onClick=${()=>up(n=>{const x=n.items.find(y=>y.id===i.id);x.flagged=!x.flagged})}>Flag</button><button class="btn2 text-xs" onClick=${()=>up(n=>{n.items.find(y=>y.id===i.id).removed=true})}>Remove</button></span></div>`)}</div>
+  <div class="card p-4"><b>Reward stock</b>${S.rewards.map(r=>h`<div key=${r.id} class="flex justify-between items-center py-1 text-sm"><span>${r.name} (${r.stock})</span><button class="btn2 text-xs" onClick=${()=>up(n=>{n.rewards.find(x=>x.id===r.id).stock+=10})}>+10 stock</button></div>`)}</div></div>`}
+
+ ${tab==='setup'&&h`<div class="card p-5 text-sm space-y-3"><h2 class="text-lg font-bold">Backend configuration</h2>
+  <p><b>Working in this demo (in-browser):</b> sign-in flow, reports, search and filters, matching, confirmation-gated points, redemption, leaderboard, notifications, admin tools. Data lives in this browser’s storage only.</p>
+  <p><b>Needs Supabase to go live:</b> email verification and domain restriction (Auth), shared database, photo storage bucket, server-side points (so users cannot edit their own balance), real AI matching (Edge Function with image and text embeddings), push or email notifications. Published pages cannot reach Supabase, so run the source in your own project.</p>
+  <ol class="list-decimal ml-5 space-y-1"><li>Create a Supabase project and enable Email auth with confirmation. Add a trigger that rejects emails not ending in ${DOMAIN}.</li><li>Create a public Storage bucket <code>item-photos</code>.</li><li>Run the schema below in the SQL editor, then add RLS: users read all items, write only their own rows; <code>points</code> and <code>transactions</code> change only through the <code>confirm_return</code> function.</li><li>Deploy an Edge Function <code>match-items</code> that embeds title, description and photo and stores matches above a threshold.</li></ol>
+  <pre class="overflow-x-auto p-3 rounded-xl text-xs" style="background:#eef2ff">create table profiles(id uuid primary key references auth.users, name text, role text default 'student', points int default 0, returns int default 0, banned bool default false);
+create table items(id uuid primary key default gen_random_uuid(), type text, title text, description text, category text, location text, lost_on date, image_url text, owner uuid references profiles, claimed_by uuid references profiles, status text default 'open', flagged bool default false, embedding vector(768));
+create table matches(id uuid primary key default gen_random_uuid(), lost_id uuid references items, found_id uuid references items, score int);
+create table transactions(id uuid primary key default gen_random_uuid(), user_id uuid references profiles, amount int, reason text, created_at timestamptz default now());
+create table rewards(id uuid primary key default gen_random_uuid(), name text, cost int, stock int);
+create table redemptions(id uuid primary key default gen_random_uuid(), user_id uuid references profiles, reward_id uuid references rewards, created_at timestamptz default now());
+create table notifications(id uuid primary key default gen_random_uuid(), user_id uuid references profiles, body text, created_at timestamptz default now());
+-- confirm_return(item_id): callable only by claimed_by; sets status='returned', adds 100 pts to finder, inserts transaction.</pre>
+  <p class="font-semibold">FindIt – Find What’s Lost. Reward What’s Good.</p></div>`}
+ ${toast&&h`<div class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-indigo-700 text-white px-5 py-2 rounded-full shadow-lg" style=${{animation:'in .3s'}}>${toast}</div>`}
+</div>`}
+ReactDOM.createRoot(document.getElementById('root')).render(h`<${App}/>`);
+</script></body></html>
